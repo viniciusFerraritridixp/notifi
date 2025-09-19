@@ -36,4 +36,22 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
+  base: './',
+  server: {
+    port: 5173,
+    open: true,
+  },
+  preview: {
+    port: 4173,
+    open: true,
+  },
 })

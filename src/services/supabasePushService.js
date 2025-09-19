@@ -61,6 +61,8 @@ class SupabasePushNotificationService {
 
   // Configurar listener para vendas em tempo real
   setupSalesListener() {
+    console.log('🔧 Configurando listener de vendas...')
+    
     // Configurar canal Real-time para monitorar eventos de vendas
     this.realtimeChannel = supabase
       .channel('sales-notifications')
@@ -72,7 +74,7 @@ class SupabasePushNotificationService {
           table: 'sales_events'
         },
         (payload) => {
-          console.log('Novo evento de venda detectado:', payload.new)
+          console.log('🔔 Novo evento de venda detectado:', payload.new)
           this.handleSaleEvent(payload.new)
         }
       )
@@ -84,19 +86,31 @@ class SupabasePushNotificationService {
           table: 'vendas'
         },
         (payload) => {
-          console.log('Nova venda detectada (direto):', payload.new)
+          console.log('💰 Nova venda detectada (direto):', payload.new)
           this.handleNewSale(payload.new)
         }
       )
       .subscribe((status) => {
-        console.log('Status do Real-time:', status)
+        console.log('📡 Status do Real-time:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Real-time conectado com sucesso!')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Erro no canal Real-time')
+        }
       })
   }
 
   // Processar evento de venda da tabela sales_events
   async handleSaleEvent(saleEvent) {
     try {
-      console.log('Processando evento de venda:', saleEvent)
+      console.log('🔔 Processando evento de venda:', saleEvent)
+      
+      // Se for um teste de Real-time
+      if (saleEvent.event_type === 'teste_realtime') {
+        console.log('📡 Teste de Real-time detectado!')
+        alert('✅ Real-time funcionando! Evento detectado: ' + saleEvent.produto)
+        return
+      }
       
       // Buscar dados completos da venda
       const { data: venda, error: vendaError } = await supabase
@@ -109,6 +123,8 @@ class SupabasePushNotificationService {
         console.error('Erro ao buscar dados da venda:', vendaError)
         return
       }
+
+      console.log('💰 Processando venda real:', venda)
 
       // Processar como uma venda normal
       await this.handleNewSale(venda)
@@ -128,6 +144,8 @@ class SupabasePushNotificationService {
   // Processar nova venda e exibir notificação local
   async handleNewSale(venda) {
     try {
+      console.log('🎯 Iniciando processamento de venda:', venda)
+      
       // Buscar configurações de notificação
       const { data: settings, error } = await supabase
         .from('notification_settings')
@@ -140,6 +158,8 @@ class SupabasePushNotificationService {
         console.error('Erro ao buscar configurações:', error)
         return
       }
+
+      console.log('📋 Configurações encontradas:', settings)
 
       // Usar configurações padrão se não encontrar
       const notificationConfig = settings || {
@@ -155,8 +175,19 @@ class SupabasePushNotificationService {
         .replace('{produto}', venda.produto || '')
         .replace('{cliente}', venda.cliente || '')
 
+      console.log('💬 Mensagem da notificação:', mensagem)
+
+      // Verificar se notificações estão permitidas
+      if (Notification.permission !== 'granted') {
+        console.warn('⚠️ Permissão de notificação não concedida')
+        alert('⚠️ Permissão de notificação não concedida. Permita notificações para receber alertas de vendas.')
+        return
+      }
+
       // Exibir notificação local se o service worker estiver ativo
       if ('serviceWorker' in navigator && 'Notification' in window) {
+        console.log('🔔 Tentando exibir notificação...')
+        
         const registration = await navigator.serviceWorker.ready
         
         await registration.showNotification(notificationConfig.titulo, {
@@ -179,6 +210,10 @@ class SupabasePushNotificationService {
           requireInteraction: true,
           vibrate: [200, 100, 200]
         })
+        
+        console.log('✅ Notificação exibida com sucesso!')
+      } else {
+        console.error('❌ Service Worker ou Notifications não disponíveis')
       }
     } catch (error) {
       console.error('Erro ao processar notificação de venda:', error)

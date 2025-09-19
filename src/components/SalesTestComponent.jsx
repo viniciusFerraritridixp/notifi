@@ -33,7 +33,12 @@ const SalesTestComponent = () => {
       }
 
       setLastSale(data)
-      alert('Venda inserida com sucesso! As notificações devem ser enviadas automaticamente.')
+      
+      // FORÇAR notificação imediatamente após inserir a venda
+      console.log('Venda inserida, disparando notificação:', data)
+      await supabasePushService.handleNewSale(data)
+      
+      alert('Venda inserida com sucesso! Notificação enviada.')
       
     } catch (error) {
       console.error('Erro:', error)
@@ -71,6 +76,40 @@ const SalesTestComponent = () => {
       console.log('Subscriptions ativas:', data)
     } catch (error) {
       console.error('Erro:', error)
+    }
+  }
+
+  // Verificar se Real-time está funcionando
+  const testRealtime = async () => {
+    try {
+      console.log('🧪 Testando Real-time...')
+      
+      // Inserir um evento de teste diretamente na tabela sales_events
+      const { data, error } = await supabase
+        .from('sales_events')
+        .insert([{
+          sale_id: 'test-' + Date.now(),
+          event_type: 'teste_realtime',
+          valor: 99.99,
+          produto: 'Teste Real-time',
+          cliente: 'Cliente Teste',
+          processed: false
+        }])
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao inserir evento de teste:', error)
+        alert('Erro: ' + error.message)
+        return
+      }
+
+      console.log('✅ Evento de teste inserido:', data)
+      alert('Evento de teste inserido! Verifique o console para ver se o Real-time detectou.')
+      
+    } catch (error) {
+      console.error('Erro:', error)
+      alert('Erro: ' + error.message)
     }
   }
 
@@ -157,6 +196,20 @@ const SalesTestComponent = () => {
           }}
         >
           🔔 Testar Notificação Local
+        </button>
+
+        <button 
+          onClick={testRealtime}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#ffc107',
+            color: 'black',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          📡 Testar Real-time
         </button>
 
         <button 
