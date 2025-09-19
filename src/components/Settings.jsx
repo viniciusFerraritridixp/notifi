@@ -61,6 +61,59 @@ function Settings({ isSupported, permission, onPermissionChange }) {
     }
   }
 
+  // Exportar subscription atual para arquivo JSON
+  const exportSubscription = async () => {
+    if (!('serviceWorker' in navigator)) {
+      alert('Service Worker não está disponível neste navegador')
+      return
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+
+      if (!subscription) {
+        alert('Nenhuma subscription encontrada. Primeiro, conceda permissão e inscreva-se para push.')
+        return
+      }
+
+      const blob = new Blob([JSON.stringify(subscription)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'subscription.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Erro ao exportar subscription', err)
+      alert('Falha ao exportar subscription. Veja o console para mais detalhes.')
+    }
+  }
+
+  // Copiar subscription para o clipboard
+  const copySubscriptionToClipboard = async () => {
+    if (!('serviceWorker' in navigator)) {
+      alert('Service Worker não está disponível neste navegador')
+      return
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+
+      if (!subscription) {
+        alert('Nenhuma subscription encontrada. Primeiro, conceda permissão e inscreva-se para push.')
+        return
+      }
+
+      await navigator.clipboard.writeText(JSON.stringify(subscription))
+      alert('Subscription copiada para o clipboard. Cole em um arquivo subscription.json no servidor.')
+    } catch (err) {
+      console.error('Erro ao copiar subscription', err)
+      alert('Falha ao copiar subscription. Veja o console para mais detalhes.')
+    }
+  }
+
   const getBrowserInfo = () => {
     const userAgent = navigator.userAgent
     let browserName = 'Desconhecido'
@@ -208,6 +261,20 @@ function Settings({ isSupported, permission, onPermissionChange }) {
             onClick={resetPermissions}
           >
             Resetar Permissões
+          </button>
+          
+          <button
+            className="btn btn-outline"
+            onClick={exportSubscription}
+          >
+            Exportar Subscription
+          </button>
+
+          <button
+            className="btn btn-outline"
+            onClick={copySubscriptionToClipboard}
+          >
+            Copiar Subscription
           </button>
         </div>
       </div>
