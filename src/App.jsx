@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard'
 import NotificationCenter from './components/NotificationCenter'
 import Settings from './components/Settings'
 import InstallPrompt from './components/InstallPrompt'
+import ConfigurationCheck from './components/ConfigurationCheck'
 import supabasePushService from './services/supabasePushService'
 import './App.css'
 
@@ -56,6 +57,7 @@ function App() {
     <Router>
       <div className="app">
         <Header />
+        <ConfigurationCheck />
         <main className="main-content">
           <InstallPrompt />
           <Routes>
