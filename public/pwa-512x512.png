@@ -1,0 +1,7 @@
+<!-- Placeholder for 512x512 PNG icon -->
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="512" height="512" rx="128" fill="#2196F3"/>
+<path d="M256 106.67C211.82 106.67 176 142.49 176 186.67V229.33L149.33 256V309.33H362.67V256L336 229.33V186.67C336 142.49 300.18 106.67 256 106.67Z" fill="white"/>
+<circle cx="256" cy="373.33" r="21.33" fill="white"/>
+<path d="M202.67 320H309.33V352H202.67V320Z" fill="#2196F3"/>
+</svg>

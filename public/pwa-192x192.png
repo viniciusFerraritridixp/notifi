@@ -1,0 +1,7 @@
+<!-- Placeholder for 192x192 PNG icon -->
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="192" height="192" rx="48" fill="#2196F3"/>
+<path d="M96 40C79.43 40 66 53.43 66 70V86L56 96V116H136V96L126 86V70C126 53.43 112.57 40 96 40Z" fill="white"/>
+<circle cx="96" cy="140" r="8" fill="white"/>
+<path d="M76 120H116V132H76V120Z" fill="#2196F3"/>
+</svg>

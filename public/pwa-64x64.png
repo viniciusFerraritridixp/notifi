@@ -1,0 +1,7 @@
+<!-- Placeholder for 64x64 PNG icon -->
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="64" height="64" rx="16" fill="#2196F3"/>
+<path d="M32 13.33C26.48 13.33 22 17.81 22 23.33V28.67L18.67 32V38.67H45.33V32L42 28.67V23.33C42 17.81 37.52 13.33 32 13.33Z" fill="white"/>
+<circle cx="32" cy="46.67" r="2.67" fill="white"/>
+<path d="M25.33 40H38.67V44H25.33V40Z" fill="#2196F3"/>
+</svg>
