@@ -1,5 +1,7 @@
 // Utilitários para gerenciamento de notificações
 
+import supabasePushService from '../services/supabasePushService.js'
+
 export class NotificationManager {
   constructor() {
     this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
@@ -50,7 +52,7 @@ export class NotificationManager {
     return notification
   }
 
-  // Registrar para push notifications
+  // Registrar para push notifications com Supabase
   async subscribeToPush() {
     if (!this.isSupported) {
       throw new Error('Push notifications não são suportadas')
@@ -59,8 +61,8 @@ export class NotificationManager {
     try {
       const registration = await navigator.serviceWorker.ready
       
-      // Chave VAPID pública (em produção, isso viria do servidor)
-      const vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8YN1YrY-YmhS4PQlEr0f5Z5Q8QjC0WQWEj1LYNmEelk7bkVA6qZLQnV8'
+      // Usar chave VAPID do ambiente
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8YN1YrY-YmhS4PQlEr0f5Z5Q8QjC0WQWEj1LYNmEelk7bkVA6qZLQnV8'
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -69,28 +71,14 @@ export class NotificationManager {
 
       console.log('Subscription criada:', subscription)
       
-      // Em produção, enviar subscription para o servidor
-      await this.sendSubscriptionToServer(subscription)
+      // Registrar subscription no Supabase
+      await supabasePushService.registerSubscription(subscription)
       
       return subscription
     } catch (error) {
       console.error('Erro ao se inscrever para push:', error)
       throw error
     }
-  }
-
-  // Enviar subscription para o servidor (mock)
-  async sendSubscriptionToServer(subscription) {
-    // Em produção, isso seria uma chamada real para sua API
-    console.log('Enviando subscription para servidor:', subscription)
-    
-    // Simular chamada de API
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        localStorage.setItem('push-subscription', JSON.stringify(subscription))
-        resolve({ success: true })
-      }, 1000)
-    })
   }
 
   // Obter subscription atual
@@ -106,10 +94,14 @@ export class NotificationManager {
     }
   }
 
-  // Cancelar subscription
+  // Cancelar subscription do Supabase
   async unsubscribeFromPush() {
     const subscription = await this.getCurrentSubscription()
     if (subscription) {
+      // Remover do Supabase
+      await supabasePushService.unregisterSubscription(subscription)
+      
+      // Cancelar localmente
       await subscription.unsubscribe()
       localStorage.removeItem('push-subscription')
       console.log('Subscription cancelada')

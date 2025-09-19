@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import NotificationForm from './NotificationForm'
 import NotificationStats from './NotificationStats'
+import SalesTestComponent from './SalesTestComponent'
 
 function Dashboard({ notifications, isSupported, permission, onPermissionChange, onAddNotification }) {
   const [showForm, setShowForm] = useState(false)
@@ -121,6 +122,9 @@ function Dashboard({ notifications, isSupported, permission, onPermissionChange,
           onCancel={() => setShowForm(false)}
         />
       )}
+
+      {/* Componente de teste para o sistema de vendas */}
+      <SalesTestComponent />
     </div>
   )
 }

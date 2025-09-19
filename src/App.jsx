@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard'
 import NotificationCenter from './components/NotificationCenter'
 import Settings from './components/Settings'
 import InstallPrompt from './components/InstallPrompt'
+import supabasePushService from './services/supabasePushService'
 import './App.css'
 
 function App() {
@@ -17,8 +18,22 @@ function App() {
     if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true)
       setPermission(Notification.permission)
+      
+      // Inicializar serviço Supabase de notificações
+      initializeSupabaseNotifications()
     }
   }, [])
+
+  const initializeSupabaseNotifications = async () => {
+    try {
+      // Inicializar o serviço de notificações Supabase
+      await supabasePushService.initialize()
+      
+      console.log('Serviço Supabase de notificações inicializado')
+    } catch (error) {
+      console.error('Erro ao inicializar notificações Supabase:', error)
+    }
+  }
 
   const addNotification = (notification) => {
     const newNotification = {
