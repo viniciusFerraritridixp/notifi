@@ -226,6 +226,40 @@ class HybridNotificationManager {
   // Registrar informações no servidor
   async registerOnServer(registrationData) {
     try {
+      // Extrair chaves Web Push da subscription se disponível
+      let webPushEndpoint = null
+      let webPushP256dh = null
+      let webPushAuth = null
+      
+      if (registrationData.webPush) {
+        webPushEndpoint = registrationData.webPush.endpoint
+        
+        // Tentar extrair chaves de diferentes maneiras
+        if (registrationData.webPush.keys) {
+          webPushP256dh = registrationData.webPush.keys.p256dh
+          webPushAuth = registrationData.webPush.keys.auth
+        } else if (registrationData.webPush.getKey) {
+          // Converter ArrayBuffer para base64
+          try {
+            const p256dhBuffer = registrationData.webPush.getKey('p256dh')
+            const authBuffer = registrationData.webPush.getKey('auth')
+            
+            if (p256dhBuffer && authBuffer) {
+              webPushP256dh = btoa(String.fromCharCode(...new Uint8Array(p256dhBuffer)))
+              webPushAuth = btoa(String.fromCharCode(...new Uint8Array(authBuffer)))
+            }
+          } catch (keyError) {
+            console.warn('[HybridNotification] Erro ao extrair chaves via getKey:', keyError)
+          }
+        }
+        
+        console.log('🔍 [HybridNotification] Chaves Web Push extraídas:', {
+          endpoint: webPushEndpoint ? 'PRESENTE' : 'AUSENTE',
+          p256dh: webPushP256dh ? 'PRESENTE' : 'AUSENTE',
+          auth: webPushAuth ? 'PRESENTE' : 'AUSENTE'
+        })
+      }
+
       const deviceInfo = {
         deviceToken: this.deviceToken,
         userAgent: navigator.userAgent,
@@ -237,6 +271,10 @@ class HybridNotificationManager {
         screen: `${screen.width}x${screen.height}`,
         strategies: registrationData.strategies,
         webPushSubscription: registrationData.webPush,
+        // IMPORTANTE: Salvar chaves Web Push diretamente no device_registrations
+        web_push_endpoint: webPushEndpoint,
+        web_push_p256dh: webPushP256dh,
+        web_push_auth: webPushAuth,
         timestamp: new Date().toISOString(),
         url: window.location.href
       }
@@ -252,6 +290,14 @@ class HybridNotificationManager {
       if (result.success) {
         console.log('✅ [HybridNotification] Registrado no servidor:', result.data?.id)
         localStorage.setItem('registration_id', result.data?.id)
+        
+        // Log para debug - verificar se as chaves foram salvas
+        console.log('🔍 [HybridNotification] Device registration salvo com chaves Web Push:', {
+          id: result.data?.id,
+          has_web_push_endpoint: !!result.data?.web_push_endpoint,
+          has_web_push_p256dh: !!result.data?.web_push_p256dh,
+          has_web_push_auth: !!result.data?.web_push_auth
+        })
       } else {
         console.error('❌ [HybridNotification] Erro no servidor:', result.error)
       }
