@@ -6,6 +6,63 @@ class SupabasePushNotificationService {
     this.realtimeChannel = null
   }
 
+  // Registrar device token no Supabase
+  async registerDeviceToken(deviceInfo) {
+    try {
+      console.log('🔄 [SupabasePush] Registrando device token...')
+      console.log('📝 [SupabasePush] Device info:', deviceInfo)
+
+      // Preparar dados do dispositivo
+      const deviceData = {
+        device_token: deviceInfo.deviceToken,
+        user_agent: deviceInfo.userAgent,
+        platform: deviceInfo.platform,
+        is_ios: deviceInfo.isIOS,
+        is_mobile: deviceInfo.isMobile,
+        language: deviceInfo.language,
+        timezone: deviceInfo.timezone,
+        screen_resolution: deviceInfo.screen,
+        strategies: deviceInfo.strategies,
+        web_push_endpoint: deviceInfo.webPushSubscription?.endpoint || null,
+        web_push_p256dh: deviceInfo.webPushSubscription?.keys?.p256dh || null,
+        web_push_auth: deviceInfo.webPushSubscription?.keys?.auth || null,
+        registration_url: deviceInfo.url,
+        is_active: true,
+        last_seen: new Date().toISOString()
+      }
+
+      console.log('📦 [SupabasePush] Dados do device token:', deviceData)
+
+      // Inserir ou atualizar no banco
+      const { data, error } = await supabase
+        .from('device_registrations')
+        .upsert(deviceData, {
+          onConflict: 'device_token'
+        })
+        .select()
+
+      if (error) {
+        console.error('❌ [SupabasePush] Erro ao registrar device token:', error)
+        throw error
+      }
+
+      console.log('✅ [SupabasePush] Device token registrado:', data?.[0]?.id)
+
+      return {
+        success: true,
+        data: data?.[0],
+        message: 'Device token registrado com sucesso'
+      }
+
+    } catch (error) {
+      console.error('❌ [SupabasePush] Erro no registro:', error)
+      return {
+        success: false,
+        error: error.message || 'Erro desconhecido ao registrar device token'
+      }
+    }
+  }
+
   // Registrar subscription no Supabase
   async registerSubscription(subscription) {
     try {
@@ -57,10 +114,171 @@ class SupabasePushNotificationService {
       console.log('📊 [SupabasePush] Dados retornados:', data)
       
       this.subscription = subscription
-      return data
+      
+      return {
+        success: true,
+        data: data?.[0],
+        message: 'Subscription registrada com sucesso'
+      }
     } catch (error) {
       console.error('💥 [SupabasePush] Erro geral ao registrar subscription:', error)
-      throw error
+      return {
+        success: false,
+        error: error.message || 'Erro desconhecido ao registrar subscription'
+      }
+    }
+  }
+
+  // Enviar notificação para device tokens específicos
+  async sendNotificationToDeviceTokens(deviceTokens, notification) {
+    try {
+      console.log('📤 [SupabasePush] Enviando para device tokens:', deviceTokens.length)
+      
+      const results = []
+      
+      for (const deviceToken of deviceTokens) {
+        try {
+          // Buscar informações do dispositivo
+          const { data: device, error } = await supabase
+            .from('device_registrations')
+            .select('*')
+            .eq('device_token', deviceToken)
+            .eq('is_active', true)
+            .single()
+
+          if (error || !device) {
+            console.warn(`⚠️ Device token não encontrado: ${deviceToken}`)
+            results.push({ deviceToken, success: false, error: 'Device not found' })
+            continue
+          }
+
+          // Estratégia baseada no dispositivo
+          let notificationResult = null
+
+          if (device.web_push_endpoint && device.web_push_p256dh && device.web_push_auth) {
+            // Usar Web Push se disponível
+            console.log(`📲 [SupabasePush] Usando Web Push para ${deviceToken}`)
+            notificationResult = await this.sendWebPushNotification(device, notification)
+          } else if (device.is_ios) {
+            // Estratégia específica para iOS
+            console.log(`🍎 [SupabasePush] Estratégia iOS para ${deviceToken}`)
+            notificationResult = await this.sendIOSFallbackNotification(device, notification)
+          } else {
+            // Fallback genérico
+            console.log(`📱 [SupabasePush] Fallback genérico para ${deviceToken}`)
+            notificationResult = await this.sendFallbackNotification(device, notification)
+          }
+
+          results.push({
+            deviceToken,
+            success: notificationResult.success,
+            error: notificationResult.error
+          })
+
+        } catch (error) {
+          console.error(`❌ Erro ao enviar para ${deviceToken}:`, error)
+          results.push({ deviceToken, success: false, error: error.message })
+        }
+      }
+
+      return {
+        success: true,
+        results,
+        message: `Processados ${results.length} device tokens`
+      }
+
+    } catch (error) {
+      console.error('❌ [SupabasePush] Erro ao enviar notificações:', error)
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
+
+  // Enviar Web Push para dispositivo
+  async sendWebPushNotification(device, notification) {
+    try {
+      // Aqui você chamaria sua Edge Function ou serviço backend
+      // que tem as chaves VAPID privadas para enviar o push
+      
+      const response = await fetch('/api/send-push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          endpoint: device.web_push_endpoint,
+          p256dh: device.web_push_p256dh,
+          auth: device.web_push_auth,
+          notification
+        })
+      })
+
+      if (response.ok) {
+        return { success: true }
+      } else {
+        return { success: false, error: 'Push server error' }
+      }
+
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Estratégia específica para iOS
+  async sendIOSFallbackNotification(device, notification) {
+    try {
+      // Para iOS, podemos usar estratégias como:
+      // 1. Server-Sent Events
+      // 2. Polling em background
+      // 3. Notificação local quando o app abrir
+      
+      // Salvar notificação para entrega quando o dispositivo conectar
+      const { data, error } = await supabase
+        .from('pending_notifications')
+        .insert({
+          device_token: device.device_token,
+          notification_data: notification,
+          created_at: new Date().toISOString(),
+          delivery_method: 'ios_fallback'
+        })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      // Tentar entrega imediata via SSE se o dispositivo estiver online
+      // (implementar posteriormente)
+
+      return { success: true, method: 'queued_for_ios' }
+
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Fallback genérico
+  async sendFallbackNotification(device, notification) {
+    try {
+      // Salvar para entrega posterior
+      const { data, error } = await supabase
+        .from('pending_notifications')
+        .insert({
+          device_token: device.device_token,
+          notification_data: notification,
+          created_at: new Date().toISOString(),
+          delivery_method: 'fallback'
+        })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, method: 'queued' }
+
+    } catch (error) {
+      return { success: false, error: error.message }
     }
   }
 
@@ -78,14 +296,14 @@ class SupabasePushNotificationService {
       }
 
       // opcional: remover entradas antigas com o mesmo endpoint
-      await supabase
+      const { error: deleteError } = await supabase
         .from('push_subscriptions')
         .delete()
         .eq('endpoint', subscription.endpoint)
 
-      if (error) {
-        console.error('Erro ao desregistrar subscription:', error)
-        throw error
+      if (deleteError) {
+        console.error('Erro ao deletar subscription:', deleteError)
+        throw deleteError
       }
 
       console.log('Subscription desregistrada com sucesso')

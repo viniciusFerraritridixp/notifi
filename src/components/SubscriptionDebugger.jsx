@@ -6,6 +6,7 @@ const SubscriptionDebugger = () => {
   const [isTestingEnvironment, setIsTestingEnvironment] = useState(false)
   const [isTestingSubscription, setIsTestingSubscription] = useState(false)
   const [isTestingDatabase, setIsTestingDatabase] = useState(false)
+  const [isTestingHybrid, setIsTestingHybrid] = useState(false)
 
   const addLog = (message, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString()
@@ -55,18 +56,55 @@ const SubscriptionDebugger = () => {
 
       // Test 6: VAPID Keys
       try {
-        const vapidResponse = await fetch('/vapid-keys.json')
-        if (vapidResponse.ok) {
-          const vapidData = await vapidResponse.json()
-          if (vapidData.publicKey) {
-            addLog('✅ VAPID keys encontradas', 'success')
-            addLog(`🔑 Public Key: ${vapidData.publicKey.substring(0, 50)}...`)
-          } else {
-            addLog('❌ VAPID public key não encontrada', 'error')
+        addLog('🔄 Carregando VAPID keys...')
+        
+        // Tentar diferentes caminhos
+        const possiblePaths = [
+          '/vapid-keys.json',
+          './vapid-keys.json', 
+          'vapid-keys.json',
+          '/public/vapid-keys.json'
+        ]
+        
+        let vapidData = null
+        let successPath = null
+        
+        for (const path of possiblePaths) {
+          try {
+            addLog(`🔄 Tentando path: ${path}`)
+            const vapidResponse = await fetch(path)
+            addLog(`📡 Response status para ${path}: ${vapidResponse.status}`)
+            
+            if (vapidResponse.ok) {
+              const responseText = await vapidResponse.text()
+              addLog(`📄 Response text preview: ${responseText.substring(0, 100)}...`)
+              
+              // Verificar se é JSON válido
+              if (responseText.trim().startsWith('{')) {
+                vapidData = JSON.parse(responseText)
+                successPath = path
+                break
+              } else {
+                addLog(`⚠️ ${path} retornou HTML em vez de JSON`, 'warning')
+              }
+            }
+          } catch (pathError) {
+            addLog(`❌ Erro no path ${path}: ${pathError.message}`, 'warning')
           }
-        } else {
-          addLog('❌ Arquivo vapid-keys.json não encontrado', 'error')
         }
+        
+        if (vapidData && vapidData.publicKey) {
+          addLog(`✅ VAPID keys encontradas em: ${successPath}`, 'success')
+          addLog(`🔑 Public Key: ${vapidData.publicKey.substring(0, 50)}...`)
+        } else {
+          addLog('❌ VAPID keys não encontradas em nenhum path', 'error')
+          
+          // Fallback: usar chave hardcoded
+          addLog('🔄 Usando chave VAPID hardcoded como fallback...', 'warning')
+          const fallbackKey = 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
+          addLog(`🔑 Fallback Key: ${fallbackKey.substring(0, 50)}...`, 'warning')
+        }
+        
       } catch (error) {
         addLog(`❌ Erro ao carregar VAPID keys: ${error.message}`, 'error')
       }
@@ -101,16 +139,38 @@ const SubscriptionDebugger = () => {
       addLog('✅ Service Worker registrado', 'success')
 
       // Test VAPID key loading
-      const vapidResponse = await fetch('/vapid-keys.json')
-      const vapidData = await vapidResponse.json()
-      const publicKey = vapidData.publicKey
-
-      if (!publicKey) {
-        addLog('❌ VAPID public key não encontrada', 'error')
-        return
+      addLog('🔄 Carregando VAPID keys para subscription...')
+      
+      // Tentar carregar VAPID keys
+      let publicKey = null
+      const possiblePaths = ['/vapid-keys.json', './vapid-keys.json', 'vapid-keys.json']
+      
+      for (const path of possiblePaths) {
+        try {
+          const vapidResponse = await fetch(path)
+          
+          if (vapidResponse.ok) {
+            const responseText = await vapidResponse.text()
+            
+            if (responseText.trim().startsWith('{')) {
+              const vapidData = JSON.parse(responseText)
+              if (vapidData.publicKey) {
+                publicKey = vapidData.publicKey
+                addLog(`✅ VAPID key carregada de: ${path}`, 'success')
+                break
+              }
+            }
+          }
+        } catch (error) {
+          // Continuar tentando outros paths
+        }
       }
 
-      addLog('✅ VAPID key carregada', 'success')
+      // Fallback para chave hardcoded
+      if (!publicKey) {
+        publicKey = 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
+        addLog('⚠️ Usando chave VAPID hardcoded', 'warning')
+      }
 
       // Test subscription creation
       addLog('🔄 Criando subscription...')
@@ -199,6 +259,89 @@ const SubscriptionDebugger = () => {
     }
   }
 
+  const testHybridSystem = async () => {
+    setIsTestingHybrid(true)
+    addLog('🚀 Iniciando teste do sistema híbrido...')
+
+    try {
+      // Importar o sistema híbrido
+      const { default: hybridNotificationManager } = await import('../utils/hybridNotificationManager.js')
+      
+      addLog('✅ Sistema híbrido carregado', 'success')
+
+      // Obter informações do dispositivo
+      const deviceInfo = hybridNotificationManager.getDeviceInfo()
+      addLog(`📱 Device Token: ${deviceInfo.deviceToken || 'Não gerado'}`)
+      addLog(`🍎 iOS: ${deviceInfo.isIOS ? 'Sim' : 'Não'}`)
+      addLog(`📱 Mobile: ${deviceInfo.isMobile ? 'Sim' : 'Não'}`)
+      addLog(`🔧 Estratégias: ${deviceInfo.strategies.join(', ')}`)
+
+      // Inicializar o sistema
+      addLog('🔄 Inicializando sistema híbrido...')
+      const result = await hybridNotificationManager.initialize()
+
+      if (result.deviceToken) {
+        addLog(`✅ Device Token: ${result.deviceToken}`, 'success')
+      }
+
+      if (result.webPush) {
+        addLog('✅ Web Push configurado', 'success')
+      } else {
+        addLog('⚠️ Web Push não disponível - usando fallback', 'warning')
+      }
+
+      addLog(`🎯 Estratégias ativas: ${result.strategies.join(', ')}`, 'success')
+
+      if (result.errors.length > 0) {
+        result.errors.forEach(error => {
+          addLog(`❌ Erro em ${error.strategy}: ${error.error}`, 'error')
+        })
+      }
+
+      addLog('✅ Sistema híbrido inicializado com sucesso!', 'success')
+
+      // Testar envio de notificação
+      addLog('🔄 Testando envio de notificação...')
+      
+      const testNotification = {
+        title: 'Teste do Sistema Híbrido',
+        body: 'Esta é uma notificação de teste do sistema híbrido',
+        icon: '/icon.svg',
+        badge: '/pwa-64x64.png',
+        timestamp: new Date().toISOString()
+      }
+
+      // Simular envio para o próprio device token
+      if (result.deviceToken) {
+        const { default: supabasePushService } = await import('../services/supabasePushService.js')
+        
+        const sendResult = await supabasePushService.sendNotificationToDeviceTokens(
+          [result.deviceToken], 
+          testNotification
+        )
+
+        if (sendResult.success) {
+          addLog('✅ Notificação enviada com sucesso!', 'success')
+          sendResult.results.forEach(res => {
+            if (res.success) {
+              addLog(`✅ ${res.deviceToken}: OK`, 'success')
+            } else {
+              addLog(`❌ ${res.deviceToken}: ${res.error}`, 'error')
+            }
+          })
+        } else {
+          addLog(`❌ Erro ao enviar: ${sendResult.error}`, 'error')
+        }
+      }
+
+    } catch (error) {
+      addLog(`❌ Erro no teste híbrido: ${error.message}`, 'error')
+      addLog(`📝 Stack: ${error.stack}`, 'error')
+    } finally {
+      setIsTestingHybrid(false)
+    }
+  }
+
   return (
     <div style={{ 
       padding: '20px', 
@@ -255,6 +398,22 @@ const SubscriptionDebugger = () => {
           }}
         >
           {isTestingDatabase ? '🔄 Testando...' : '💾 Testar Database'}
+        </button>
+
+        <button 
+          onClick={testHybridSystem}
+          disabled={isTestingHybrid}
+          style={{ 
+            marginRight: '10px', 
+            padding: '10px 20px',
+            backgroundColor: '#17a2b8',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isTestingHybrid ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {isTestingHybrid ? '🔄 Testando...' : '🚀 Testar Sistema Híbrido'}
         </button>
 
         <button 
