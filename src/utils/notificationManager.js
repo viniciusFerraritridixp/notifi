@@ -1,11 +1,19 @@
 // Utilitários para gerenciamento de notificações
 
 import supabasePushService from '../services/supabasePushService.js'
+import iosNotificationHelper from './iosNotificationHelper.js'
 
 export class NotificationManager {
   constructor() {
     this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
     this.permission = this.isSupported ? Notification.permission : 'denied'
+    this.isIOS = this.detectIOS()
+  }
+
+  // Detectar se está no iOS
+  detectIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   }
 
   // Verificar se notificações são suportadas
@@ -22,6 +30,12 @@ export class NotificationManager {
     try {
       const permission = await Notification.requestPermission()
       this.permission = permission
+      
+      // Se for iOS e a permissão foi concedida, configurar suporte específico
+      if (this.isIOS && permission === 'granted') {
+        console.log('[NotificationManager] Configurando suporte específico para iOS')
+      }
+      
       return permission
     } catch (error) {
       console.error('Erro ao solicitar permissão:', error)
@@ -42,12 +56,22 @@ export class NotificationManager {
       tag: `notification-${Date.now()}`
     }
 
-    const notification = new Notification(title, { ...defaultOptions, ...options })
+    const finalOptions = { ...defaultOptions, ...options }
+
+    // Se for iOS, usar o helper específico
+    if (this.isIOS) {
+      return await iosNotificationHelper.sendNotificationWithFallback(title, finalOptions)
+    }
+
+    // Comportamento padrão para outros sistemas
+    const notification = new Notification(title, finalOptions)
     
-    // Auto-fechar após 5 segundos se não houver interação
-    setTimeout(() => {
-      notification.close()
-    }, 5000)
+    // Auto-fechar após 5 segundos se não houver interação (exceto iOS)
+    if (!this.isIOS) {
+      setTimeout(() => {
+        notification.close()
+      }, 5000)
+    }
 
     return notification
   }
@@ -64,19 +88,106 @@ export class NotificationManager {
       // Usar chave VAPID do ambiente
       const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8YN1YrY-YmhS4PQlEr0f5Z5Q8QjC0WQWEj1LYNmEelk7bkVA6qZLQnV8'
       
-      const subscription = await registration.pushManager.subscribe({
+      const subscriptionOptions = {
         userVisibleOnly: true,
         applicationServerKey: this.urlBase64ToUint8Array(vapidPublicKey)
-      })
+      }
+
+      // Para iOS, adicionar configurações específicas
+      if (this.isIOS) {
+        console.log('[NotificationManager] Configurando subscription para iOS')
+        // iOS requer userVisibleOnly sempre true
+        subscriptionOptions.userVisibleOnly = true
+      }
+
+      const subscription = await registration.pushManager.subscribe(subscriptionOptions)
 
       console.log('Subscription criada:', subscription)
       
       // Registrar subscription no Supabase
       await supabasePushService.registerSubscription(subscription)
       
+      // Para iOS, configurar monitoramento adicional
+      if (this.isIOS) {
+        this.setupIOSBackgroundHandling()
+      }
+      
       return subscription
     } catch (error) {
       console.error('Erro ao se inscrever para push:', error)
+      
+      // Para iOS, tentar novamente com configurações diferentes
+      if (this.isIOS && error.name === 'NotSupportedError') {
+        console.log('[NotificationManager] Tentando subscription alternativa para iOS')
+        return this.tryAlternativeIOSSubscription()
+      }
+      
+      throw error
+    }
+  }
+
+  // Configuração específica para iOS em background
+  setupIOSBackgroundHandling() {
+    if (!this.isIOS) return
+
+    console.log('[NotificationManager] Configurando handling de background para iOS')
+    
+    // Listener para quando o app vai para background
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // App indo para background
+        this.handleIOSBackground()
+      } else {
+        // App voltando ao foreground
+        this.handleIOSForeground()
+      }
+    })
+
+    // Listener para blur/focus da janela
+    window.addEventListener('blur', () => this.handleIOSBackground())
+    window.addEventListener('focus', () => this.handleIOSForeground())
+  }
+
+  handleIOSBackground() {
+    console.log('[NotificationManager] iOS - App indo para background')
+    
+    // Enviar mensagem para o service worker
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'iOS_APP_BACKGROUND',
+        timestamp: Date.now()
+      })
+    }
+  }
+
+  handleIOSForeground() {
+    console.log('[NotificationManager] iOS - App voltando ao foreground')
+    
+    // Verificar notificações perdidas
+    setTimeout(() => {
+      iosNotificationHelper.checkMissedNotifications()
+    }, 1000)
+  }
+
+  // Tentar subscription alternativa para iOS
+  async tryAlternativeIOSSubscription() {
+    try {
+      console.log('[NotificationManager] Tentando método alternativo para iOS')
+      
+      const registration = await navigator.serviceWorker.ready
+      
+      // Tentar sem applicationServerKey primeiro
+      const basicSubscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true
+      })
+      
+      if (basicSubscription) {
+        console.log('[NotificationManager] Subscription básica criada para iOS')
+        await supabasePushService.registerSubscription(basicSubscription)
+        return basicSubscription
+      }
+    } catch (error) {
+      console.error('[NotificationManager] Erro na subscription alternativa:', error)
       throw error
     }
   }
