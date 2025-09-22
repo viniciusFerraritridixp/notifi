@@ -9,6 +9,23 @@ class SupabasePushNotificationService {
   // Registrar subscription no Supabase
   async registerSubscription(subscription) {
     try {
+      console.log('🔄 [SupabasePush] Iniciando registro da subscription...')
+      console.log('📝 [SupabasePush] Dados da subscription:', {
+        endpoint: subscription.endpoint,
+        keys: subscription.keys
+      })
+
+      // Verificar se as chaves existem
+      if (!subscription.keys) {
+        console.error('❌ [SupabasePush] Subscription não tem chaves!')
+        throw new Error('Subscription inválida: chaves de criptografia não encontradas')
+      }
+
+      if (!subscription.keys.p256dh || !subscription.keys.auth) {
+        console.error('❌ [SupabasePush] Chaves incompletas:', subscription.keys)
+        throw new Error('Subscription inválida: chaves p256dh ou auth ausentes')
+      }
+
       const subscriptionData = {
         endpoint: subscription.endpoint,
         p256dh: subscription.keys.p256dh,
@@ -16,8 +33,12 @@ class SupabasePushNotificationService {
         user_agent: navigator.userAgent
       }
 
+      console.log('📦 [SupabasePush] Dados que serão salvos:', subscriptionData)
+
       // Garantir que a subscription seja marcada como ativa e não haja duplicatas
       const payload = { ...subscriptionData, is_active: true }
+
+      console.log('🚀 [SupabasePush] Enviando para Supabase...')
 
       const { data, error } = await supabase
         .from('push_subscriptions')
@@ -27,15 +48,18 @@ class SupabasePushNotificationService {
         .select()
 
       if (error) {
-        console.error('Erro ao registrar subscription:', error)
+        console.error('❌ [SupabasePush] Erro ao registrar subscription:', error)
+        console.error('❌ [SupabasePush] Detalhes do erro:', JSON.stringify(error, null, 2))
         throw error
       }
 
-      console.log('Subscription registrada com sucesso:', data)
+      console.log('✅ [SupabasePush] Subscription registrada com sucesso!')
+      console.log('📊 [SupabasePush] Dados retornados:', data)
+      
       this.subscription = subscription
       return data
     } catch (error) {
-      console.error('Erro ao registrar subscription:', error)
+      console.error('💥 [SupabasePush] Erro geral ao registrar subscription:', error)
       throw error
     }
   }

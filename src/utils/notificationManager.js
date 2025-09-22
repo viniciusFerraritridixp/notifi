@@ -83,10 +83,15 @@ export class NotificationManager {
     }
 
     try {
+      console.log('🔄 [NotificationManager] Iniciando processo de subscription...')
+      
       const registration = await navigator.serviceWorker.ready
+      console.log('✅ [NotificationManager] Service Worker pronto:', registration)
       
       // Usar chave VAPID do ambiente
-      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8YN1YrY-YmhS4PQlEr0f5Z5Q8QjC0WQWEj1LYNmEelk7bkVA6qZLQnV8'
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
+      console.log('🔑 [NotificationManager] Usando chave VAPID:', vapidPublicKey.substring(0, 20) + '...')
+      console.log('🔍 [NotificationManager] VAPID do .env:', import.meta.env.VITE_VAPID_PUBLIC_KEY ? 'ENCONTRADA' : 'NÃO ENCONTRADA')
       
       const subscriptionOptions = {
         userVisibleOnly: true,
@@ -95,16 +100,85 @@ export class NotificationManager {
 
       // Para iOS, adicionar configurações específicas
       if (this.isIOS) {
-        console.log('[NotificationManager] Configurando subscription para iOS')
+        console.log('📱 [NotificationManager] Configurando subscription para iOS')
         // iOS requer userVisibleOnly sempre true
         subscriptionOptions.userVisibleOnly = true
       }
 
+      console.log('🚀 [NotificationManager] Criando subscription...')
       const subscription = await registration.pushManager.subscribe(subscriptionOptions)
 
-      console.log('Subscription criada:', subscription)
+      console.log('✅ [NotificationManager] Subscription criada com sucesso!')
+      console.log('📊 [NotificationManager] Detalhes completos da subscription:', subscription)
+      console.log('🔑 [NotificationManager] Keys detalhadas:', {
+        hasKeys: !!subscription.keys,
+        keys: subscription.keys,
+        keysType: typeof subscription.keys,
+        keysObject: subscription.keys ? Object.keys(subscription.keys) : 'N/A'
+      })
+
+      // Verificar se as chaves existem antes de tentar salvar
+      if (!subscription.keys) {
+        console.error('❌ [NotificationManager] ERRO: Subscription criada sem chaves!')
+        console.log('🔍 [NotificationManager] Tentando obter chaves manualmente...')
+        
+        try {
+          // Método 1: Tentar obter a subscription novamente
+          const retrySubscription = await registration.pushManager.getSubscription()
+          console.log('🔄 [NotificationManager] Retry subscription:', retrySubscription)
+          
+          if (retrySubscription && retrySubscription.keys) {
+            console.log('✅ [NotificationManager] Chaves encontradas na retry subscription!')
+            subscription.keys = retrySubscription.keys
+          } else {
+            // Método 2: Tentar usar getKey() se disponível
+            console.log('🔧 [NotificationManager] Tentando método getKey()...')
+            
+            if (subscription.getKey && typeof subscription.getKey === 'function') {
+              const p256dh = subscription.getKey('p256dh')
+              const auth = subscription.getKey('auth')
+              
+              if (p256dh && auth) {
+                console.log('✅ [NotificationManager] Chaves obtidas via getKey()!')
+                subscription.keys = {
+                  p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(p256dh))),
+                  auth: btoa(String.fromCharCode.apply(null, new Uint8Array(auth)))
+                }
+              }
+            }
+            
+            // Método 3: Verificar propriedades da subscription
+            if (!subscription.keys) {
+              console.log('🔍 [NotificationManager] Propriedades da subscription:', Object.keys(subscription))
+              console.log('🔍 [NotificationManager] Options da subscription:', subscription.options)
+              
+              // Último recurso: criar subscription sem VAPID
+              console.log('🚨 [NotificationManager] Tentando criar subscription sem VAPID...')
+              await subscription.unsubscribe()
+              
+              const basicSubscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true
+              })
+              
+              console.log('🔄 [NotificationManager] Basic subscription:', basicSubscription)
+              
+              if (basicSubscription.keys) {
+                console.log('✅ [NotificationManager] Chaves encontradas na subscription básica!')
+                return basicSubscription
+              }
+            }
+          }
+        } catch (keyError) {
+          console.error('💥 [NotificationManager] Erro ao obter chaves:', keyError)
+        }
+        
+        if (!subscription.keys) {
+          throw new Error('Não foi possível obter as chaves de criptografia da subscription. Isso pode indicar um problema com o navegador ou configuração HTTPS.')
+        }
+      }
       
       // Registrar subscription no Supabase
+      console.log('💾 [NotificationManager] Salvando no Supabase...')
       await supabasePushService.registerSubscription(subscription)
       
       // Para iOS, configurar monitoramento adicional
@@ -112,13 +186,14 @@ export class NotificationManager {
         this.setupIOSBackgroundHandling()
       }
       
+      console.log('🎉 [NotificationManager] Processo de subscription completo!')
       return subscription
     } catch (error) {
-      console.error('Erro ao se inscrever para push:', error)
+      console.error('❌ [NotificationManager] Erro no processo de subscription:', error)
       
       // Para iOS, tentar novamente com configurações diferentes
       if (this.isIOS && error.name === 'NotSupportedError') {
-        console.log('[NotificationManager] Tentando subscription alternativa para iOS')
+        console.log('🔄 [NotificationManager] Tentando subscription alternativa para iOS')
         return this.tryAlternativeIOSSubscription()
       }
       
