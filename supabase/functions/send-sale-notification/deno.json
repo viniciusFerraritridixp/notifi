@@ -1,8 +1,1 @@
-{
-  "functions": {
-    "send-sale-notification": {
-      "name": "send-sale-notification",
-      "description": "Envia notificações push automáticas quando uma venda é realizada"
-    }
-  }
-}
+{}
