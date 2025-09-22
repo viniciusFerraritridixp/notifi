@@ -256,6 +256,20 @@ class HybridNotificationManager {
         console.error('❌ [HybridNotification] Erro no servidor:', result.error)
       }
 
+      // Se houver subscription Web Push, também registrar na tabela push_subscriptions
+      try {
+        if (registrationData.webPush && registrationData.webPush.endpoint) {
+          console.log('💾 [HybridNotification] Registrando subscription Web Push na tabela push_subscriptions')
+          const registrationResult = await supabasePushService.registerSubscription(registrationData.webPush)
+          if (registrationResult.success) {
+            console.log('✅ [HybridNotification] Subscription salva em push_subscriptions:', registrationResult.data?.id)
+          } else {
+            console.warn('⚠️ [HybridNotification] Falha ao salvar subscription em push_subscriptions:', registrationResult.error)
+          }
+        }
+      } catch (err) {
+        console.error('❌ [HybridNotification] Erro ao tentar registrar subscription no servidor:', err)
+      }
       return result
 
     } catch (error) {

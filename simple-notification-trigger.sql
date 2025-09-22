@@ -69,7 +69,7 @@ $$ LANGUAGE plpgsql;
 -- 2. Criar tabela de fila de notificações (se não existir)
 CREATE TABLE IF NOT EXISTS notifications_queue (
     id SERIAL PRIMARY KEY,
-    subscription_id INTEGER,
+    subscription_id UUID,
     endpoint TEXT NOT NULL,
     title TEXT NOT NULL,
     body TEXT NOT NULL,

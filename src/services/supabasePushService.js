@@ -72,21 +72,53 @@ class SupabasePushNotificationService {
         keys: subscription.keys
       })
 
-      // Verificar se as chaves existem
-      if (!subscription.keys) {
-        console.error('❌ [SupabasePush] Subscription não tem chaves!')
-        throw new Error('Subscription inválida: chaves de criptografia não encontradas')
+      // Função utilitária: ArrayBuffer -> base64
+      const arrayBufferToBase64 = (buffer) => {
+        try {
+          const bytes = new Uint8Array(buffer)
+          let binary = ''
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i])
+          }
+          return btoa(binary)
+        } catch (e) {
+          console.warn('[SupabasePush] Falha ao converter ArrayBuffer para base64', e)
+          return null
+        }
       }
 
-      if (!subscription.keys.p256dh || !subscription.keys.auth) {
-        console.error('❌ [SupabasePush] Chaves incompletas:', subscription.keys)
-        throw new Error('Subscription inválida: chaves p256dh ou auth ausentes')
+      // Tentativa robusta de extrair chaves (alguns navegadores não expõem subscription.keys diretamente)
+      let p256dh = null
+      let auth = null
+
+      if (subscription.keys && (subscription.keys.p256dh || subscription.keys.auth)) {
+        p256dh = subscription.keys.p256dh
+        auth = subscription.keys.auth
+      } else if (subscription.getKey && typeof subscription.getKey === 'function') {
+        try {
+          const pKey = subscription.getKey('p256dh')
+          const aKey = subscription.getKey('auth')
+          if (pKey) p256dh = arrayBufferToBase64(pKey)
+          if (aKey) auth = arrayBufferToBase64(aKey)
+        } catch (e) {
+          console.warn('[SupabasePush] Erro ao chamar getKey():', e)
+        }
+      } else if (subscription.p256dh && subscription.auth) {
+        // Caso já venha num formato plano
+        p256dh = subscription.p256dh
+        auth = subscription.auth
+      }
+
+      // Verificar resultado final
+      if (!p256dh || !auth) {
+        console.error('❌ [SupabasePush] Subscription não tem chaves! Detalhes:', subscription)
+        throw new Error('Subscription inválida: chaves de criptografia não encontradas')
       }
 
       const subscriptionData = {
         endpoint: subscription.endpoint,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
+        p256dh,
+        auth,
         user_agent: navigator.userAgent
       }
 
