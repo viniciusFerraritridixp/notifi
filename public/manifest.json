@@ -65,5 +65,15 @@
     "client_mode": "focus-existing"
   },
   "handle_links": "preferred",
-  "capture_links": "existing-client-navigate"
+  "capture_links": "existing-client-navigate",
+  "permissions": [
+    "notifications",
+    "background-sync",
+    "push"
+  ],
+  "background": {
+    "scripts": ["sw.js"],
+    "type": "module"
+  },
+  "gcm_sender_id": "103953800507"
 }
