@@ -133,6 +133,29 @@ node scripts/generate-vapid.js
 - O service worker precisa estar registrado e ativo
 - Verificar no DevTools → Application → Service Workers
 
+## 🔊 Som personalizado para notificações
+
+Coloque o arquivo de som (por exemplo `cash.mp3`) em `public/sounds/cash.mp3`.
+
+Exemplo de caminho local no projeto:
+
+c:\Users\Pichau\Desktop\notifi\notifi\public\sounds\cash.mp3
+
+### Como funciona
+- O Service Worker envia uma mensagem `postMessage({ type: 'play-sound', url: '/sounds/cash.mp3' })` para todas as janelas abertas.
+- O cliente (arquivo `src/main.jsx`) escuta essa mensagem e tenta reproduzir o áudio.
+- Se a reprodução automática for bloqueada pelo navegador, o URL do som é guardado em `sessionStorage` e será reproduzido na próxima interação do usuário (clique).
+
+### Limitações importantes
+- Navegadores bloqueiam autoplay de áudio sem interação do usuário. Se o PWA estiver totalmente fechado (nenhuma aba ou app cliente aberto), não há como garantir que o som toque automaticamente.
+- Em iOS, PWAs têm limitações adicionais. A melhor experiência é instalar o PWA na tela inicial e garantir que o usuário interaja ao abrir.
+- Para som 100% confiável mesmo com app fechado, a solução é um app nativo (Android/iOS) usando push nativo (FCM/APNs).
+
+### Dicas
+- Mantenha o arquivo de áudio pequeno (<= 200KB) para carregamento rápido.
+- Use formatos compatíveis (MP3, AAC) para cobertura máxima.
+- Peça permissão ao usuário para reproduzir sons em uma interação inicial (ex.: botão "Ativar sons").
+
 ## 🐛 Troubleshooting
 
 ### Notificações não aparecem
