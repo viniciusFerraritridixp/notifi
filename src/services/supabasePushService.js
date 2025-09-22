@@ -63,6 +63,16 @@ class SupabasePushNotificationService {
   setupSalesListener() {
     console.log('🔧 Configurando listener de vendas...')
     
+    // Evitar múltiplas tentativas de conexão
+    if (this.realtimeChannel) {
+      console.log('🔄 Canal Real-time já existe, removendo antes de recriar...')
+      supabase.removeChannel(this.realtimeChannel)
+      this.realtimeChannel = null
+    }
+    
+    let reconnectAttempts = 0
+    const maxReconnectAttempts = 5
+    
     // Configurar canal Real-time para monitorar eventos de vendas
     this.realtimeChannel = supabase
       .channel('sales-notifications')
@@ -94,8 +104,24 @@ class SupabasePushNotificationService {
         console.log('📡 Status do Real-time:', status)
         if (status === 'SUBSCRIBED') {
           console.log('✅ Real-time conectado com sucesso!')
+          reconnectAttempts = 0 // Reset contador em caso de sucesso
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ Erro no canal Real-time')
+          reconnectAttempts++
+          
+          if (reconnectAttempts >= maxReconnectAttempts) {
+            console.error(`❌ Máximo de ${maxReconnectAttempts} tentativas de reconexão atingido. Parando tentativas.`)
+            this.disconnect()
+            return
+          }
+          
+          // Tentar reconectar após um delay
+          setTimeout(() => {
+            console.log(`🔄 Tentativa de reconexão ${reconnectAttempts}/${maxReconnectAttempts}...`)
+            this.setupSalesListener()
+          }, Math.min(1000 * Math.pow(2, reconnectAttempts), 10000)) // Backoff exponencial com limite
+        } else if (status === 'TIMED_OUT') {
+          console.warn('⏰ Timeout na conexão Real-time')
         }
       })
   }

@@ -14,9 +14,11 @@ A tela branca que você está vendo é causada por **variáveis de ambiente falt
 ### 2. Adicione as Seguintes Variáveis
 
 #### Variáveis do Supabase:
+⚠️ **IMPORTANTE**: A URL deve incluir o protocolo `https://`
+
 ```
 VITE_SUPABASE_URL
-Valor: https://cfxkdklzpxwzvjvgnzhy.supabase.co
+Valor: https://qjrirsvrxlemamvjhdwz.supabase.co
 
 VITE_SUPABASE_ANON_KEY
 Valor: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGtka2x6cHh3enZqdmduenh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzMzExNjUsImV4cCI6MjA0ODkwNzE2NX0.n6YQSfR5iDVnWkQQAkJfKiUW_hQ6Fti3z9sUJi8rqXk

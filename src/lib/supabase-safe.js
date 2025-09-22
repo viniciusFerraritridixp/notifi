@@ -1,11 +1,26 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Verificar se as variáveis de ambiente estão definidas
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+// Função para normalizar URL do Supabase
+function normalizeSupabaseUrl(url) {
+  if (!url) return null
+  
+  // Remover espaços e quebras de linha
+  url = url.trim()
+  
+  // Adicionar https:// se não tiver protocolo
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`
+  }
+  
+  return url
+}
+
+// Verificar e normalizar variáveis de ambiente
+let supabaseUrl = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL)
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 console.log('🔧 Configuração Supabase:', {
-  url: supabaseUrl ? '✅ Definida' : '❌ Não definida',
+  url: supabaseUrl ? `✅ Definida (${supabaseUrl})` : '❌ Não definida',
   anonKey: supabaseAnonKey ? '✅ Definida' : '❌ Não definida'
 })
 
@@ -34,13 +49,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
       params: {
         eventsPerSecond: 10,
       },
+      // Configurações para evitar loops infinitos
+      reconnectAfterMs: function (tries) {
+        return [1000, 2000, 5000, 10000][tries - 1] || 10000
+      },
+      rejoinAfterMs: function (tries) {
+        return [1000, 2000, 5000, 10000][tries - 1] || 10000
+      },
+      logger: (kind, msg, data) => {
+        if (kind === 'error') {
+          console.warn('Real-time error:', msg, data)
+        }
+      }
     },
   })
 
   // Cliente administrativo para operações privilegiadas
   const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
   supabaseAdmin = supabaseServiceKey 
-    ? createClient(supabaseUrl, supabaseServiceKey)
+    ? createClient(supabaseUrl, supabaseServiceKey, {
+        realtime: { params: { eventsPerSecond: 5 } }
+      })
     : null
 }
 
