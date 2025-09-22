@@ -16,11 +16,13 @@ class SupabasePushNotificationService {
         user_agent: navigator.userAgent
       }
 
+      // Garantir que a subscription seja marcada como ativa e não haja duplicatas
+      const payload = { ...subscriptionData, is_active: true }
+
       const { data, error } = await supabase
         .from('push_subscriptions')
-        .upsert(subscriptionData, { 
-          onConflict: 'endpoint',
-          ignoreDuplicates: false 
+        .upsert(payload, {
+          onConflict: 'endpoint'
         })
         .select()
 
@@ -41,9 +43,20 @@ class SupabasePushNotificationService {
   // Remover subscription do Supabase
   async unregisterSubscription(subscription) {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('push_subscriptions')
         .update({ is_active: false })
+        .eq('endpoint', subscription.endpoint)
+
+      if (error) {
+        console.error('Erro ao desregistrar subscription:', error)
+        throw error
+      }
+
+      // opcional: remover entradas antigas com o mesmo endpoint
+      await supabase
+        .from('push_subscriptions')
+        .delete()
         .eq('endpoint', subscription.endpoint)
 
       if (error) {
@@ -216,11 +229,26 @@ class SupabasePushNotificationService {
         
         const registration = await navigator.serviceWorker.ready
         
+        const tag = `sale-${venda.id}`
+
+        // Deduplicação local: se já mostramos essa tag nos últimos 60s, não mostrar novamente
+        try {
+          const lastShown = localStorage.getItem(`notif_last_${tag}`)
+          const now = Date.now()
+          if (lastShown && (now - parseInt(lastShown, 10) < 60 * 1000)) {
+            console.log('⏳ Notificação com essa tag já exibida recentemente, pulando...')
+            return
+          }
+          localStorage.setItem(`notif_last_${tag}`, String(now))
+        } catch (e) {
+          // localStorage pode falhar em alguns contextos, ignorar
+        }
+
         await registration.showNotification(notificationConfig.titulo, {
           body: mensagem,
           icon: notificationConfig.icone,
           badge: notificationConfig.badge,
-          tag: `sale-${venda.id}`,
+          tag,
           data: {
             saleId: venda.id,
             valor: venda.valor,
