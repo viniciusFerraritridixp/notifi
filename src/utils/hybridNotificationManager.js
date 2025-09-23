@@ -11,6 +11,45 @@ class HybridNotificationManager {
     
     // Inicializar estratégias
     this.initializeStrategies()
+
+    // Heartbeat interval (ms) - enquanto app estiver em foreground envia update no last_seen
+    this.heartbeatIntervalMs = 60 * 1000 // 1 minuto
+    this.heartbeatTimer = null
+
+    // Listener para mensagens do Service Worker (KEEPALIVE, REQUEST_RESUBSCRIBE etc.)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', async (event) => {
+        try {
+          const data = event.data
+          if (!data || !data.type) return
+
+          if (data.type === 'KEEPALIVE') {
+            console.log('[HybridNotification] KEEPALIVE recebido do SW, atualizando last_seen')
+            const token = this.getStoredDeviceToken()
+            if (token) {
+              try {
+                const { default: supabasePushService } = await import('../services/supabasePushService.js')
+                await supabasePushService.updateLastSeen(token)
+              } catch (e) {
+                console.warn('[HybridNotification] Erro ao atualizar last_seen via KEEPALIVE:', e)
+              }
+            }
+          }
+
+          if (data.type === 'REQUEST_RESUBSCRIBE') {
+            console.log('[HybridNotification] REQUEST_RESUBSCRIBE recebido do SW - re-subscrevendo')
+            // Tentar re-registrar subscription
+            try {
+              this.registerDevice()
+            } catch (e) {
+              console.warn('[HybridNotification] Falha ao re-registrar após REQUEST_RESUBSCRIBE:', e)
+            }
+          }
+        } catch (e) {
+          console.warn('[HybridNotification] Erro no message listener do SW:', e)
+        }
+      })
+    }
   }
 
   detectIOS() {
@@ -324,6 +363,61 @@ class HybridNotificationManager {
     }
   }
 
+  // Iniciar heartbeat para atualizar last_seen periodicamente
+  async startHeartbeat() {
+    try {
+      const token = this.getStoredDeviceToken()
+      if (!token) return
+
+      // Limpar timer existente
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+
+      // Atualizar imediatamente
+      try {
+        const { default: supabasePushService } = await import('../services/supabasePushService.js')
+        await supabasePushService.updateLastSeen(token)
+      } catch (e) {
+        console.warn('[HybridNotification] Falha ao atualizar last_seen (imediato):', e)
+      }
+
+      // Agendar atualizações periódicas enquanto o app estiver visível
+      this.heartbeatTimer = setInterval(async () => {
+        if (document.visibilityState === 'visible') {
+          try {
+            const { default: supabasePushService } = await import('../services/supabasePushService.js')
+            await supabasePushService.updateLastSeen(token)
+            console.log('[HybridNotification] Heartbeat enviado')
+          } catch (e) {
+            console.warn('[HybridNotification] Heartbeat falhou:', e)
+          }
+        }
+      }, this.heartbeatIntervalMs)
+    } catch (error) {
+      console.error('[HybridNotification] Erro ao iniciar heartbeat:', error)
+    }
+  }
+
+  // Parar heartbeat
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
+  // Configurar listeners de visibilidade para controlar heartbeat
+  setupVisibilityListeners() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[HybridNotification] Documento visível - iniciando heartbeat')
+        this.startHeartbeat()
+      } else {
+        console.log('[HybridNotification] Documento oculto - heartbeat pausado')
+        // não matar totalmente, mas não fará updates quando oculto
+      }
+    })
+  }
+
   // Verificar se precisa re-registrar
   async checkRegistrationStatus() {
     const lastRegistration = localStorage.getItem('last_registration')
@@ -362,6 +456,14 @@ class HybridNotificationManager {
         
         // Marcar como registrado
         localStorage.setItem('last_registration', new Date().toISOString())
+
+        // Iniciar heartbeat e listeners de visibilidade
+        try {
+          this.setupVisibilityListeners()
+          this.startHeartbeat()
+        } catch (e) {
+          console.warn('[HybridNotification] Não foi possível iniciar heartbeat/listeners:', e)
+        }
         
         return result
       } else {

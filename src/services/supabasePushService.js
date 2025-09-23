@@ -331,6 +331,30 @@ class SupabasePushNotificationService {
     }
   }
 
+  // Atualizar last_seen para um device token existente (heartbeat)
+  async updateLastSeen(deviceToken) {
+    try {
+      if (!deviceToken) {
+        throw new Error('deviceToken é necessário para updateLastSeen')
+      }
+
+      const { data, error } = await supabase
+        .from('device_registrations')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('device_token', deviceToken)
+
+      if (error) {
+        console.error('[SupabasePush] Erro ao atualizar last_seen:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      console.error('[SupabasePush] updateLastSeen falhou:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
   // Remover subscription do Supabase
   async unregisterSubscription(subscription) {
     try {
