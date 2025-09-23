@@ -233,8 +233,25 @@ class SupabasePushNotificationService {
     try {
       // Aqui você chamaria sua Edge Function ou serviço backend
       // que tem as chaves VAPID privadas para enviar o push
-      
-      const response = await fetch('/api/send-push', {
+      // Determinar URL do gateway: em browser usamos rota relativa '/api/send-push',
+      // em ambiente server (scripts/Node) usamos a variável de ambiente PUSH_GATEWAY_URL
+      let gatewayUrl = null
+      try {
+        if (typeof process !== 'undefined' && process.env && process.env.PUSH_GATEWAY_URL) {
+          gatewayUrl = process.env.PUSH_GATEWAY_URL
+        }
+      } catch (e) {
+        // ignore
+      }
+      if (!gatewayUrl && (typeof window !== 'undefined')) {
+        gatewayUrl = '/api/send-push'
+      }
+
+      if (!gatewayUrl) {
+        return { success: false, error: 'PUSH_GATEWAY_URL não configurado (ambiente server) e rota relativa não disponível' }
+      }
+
+      const response = await fetch(gatewayUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

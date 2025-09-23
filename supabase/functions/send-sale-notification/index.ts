@@ -34,6 +34,15 @@ interface NotificationPayload {
   tag?: string
 }
 
+// Resultado do envio para uma subscription (usado para logs)
+interface NotificationResult {
+  subscription_id: string
+  success: boolean
+  error?: string | null
+  status_code?: number | null
+  queued_for_device_token?: boolean
+}
+
 console.log("Edge Function 'send-sale-notification' iniciada")
 
 serve(async (req) => {
@@ -176,6 +185,8 @@ serve(async (req) => {
     let successCount = 0
     let errorCount = 0
 
+    const OFFLINE_THRESHOLD_MS = Number(Deno.env.get('PUSH_OFFLINE_THRESHOLD_MS')) || 120000 // 2 minutos
+
     for (const subscription of subscriptions as PushSubscription[]) {
       try {
         console.log(`[Edge Function] Enviando para subscription ${subscription.id}...`)
@@ -195,6 +206,42 @@ serve(async (req) => {
             error: 'Subscription incompleta - faltam chaves'
           })
           continue
+        }
+
+        // Primeiro: verificar se existe um device registration vinculado a essa subscription
+        let deviceRegistration = null
+        try {
+          const { data: drData, error: drErr } = await supabase
+            .from('device_registrations')
+            .select('*')
+            .eq('web_push_endpoint', subscription.endpoint)
+            .limit(1)
+            .single()
+
+          if (!drErr) deviceRegistration = drData
+        } catch (drQueryErr) {
+          console.warn('[Edge Function] Erro ao buscar device_registration:', drQueryErr)
+        }
+
+        // Se houver device registration e o dispositivo estiver offline (last_seen > threshold),
+        // enfileirar notificação para device_token (fallback) e pular o envio Web Push.
+        if (deviceRegistration) {
+          try {
+            const lastSeen = deviceRegistration.last_seen ? new Date(deviceRegistration.last_seen).getTime() : null
+            const now = Date.now()
+            const isOffline = !lastSeen || (now - lastSeen) > OFFLINE_THRESHOLD_MS
+
+            if (isOffline && deviceRegistration.device_token) {
+              console.log(`[Edge Function] Dispositivo aparenta offline; tentaremos enviar via Web Push e, em caso de falha, enfileiraremos para device_token ${deviceRegistration.device_token}`)
+              // Não pular o envio Web Push aqui: tentaremos o envio normalmente via gateway.
+              // Caso o envio via gateway falhe (erro de rede, 410, ou outra falha), então enfileiramos
+              // a notificação em pending_notifications para entrega via device_token.
+              // Para isso, apenas continuamos a execução e o bloco de envio via gateway abaixo
+              // deverá, em caso de falha, cuidar da inserção em pending_notifications.
+            }
+          } catch (isOfflineErr) {
+            console.warn('[Edge Function] Falha ao avaliar last_seen:', isOfflineErr)
+          }
         }
 
         // Enviar via gateway HTTP (gateway deve implementar Web Push real, ex: /api/send-push)
@@ -232,13 +279,56 @@ serve(async (req) => {
                 .eq('id', subscription.id)
             }
             const text = await resp.text().catch(() => '')
-            results.push({ subscription_id: subscription.id, success: false, error: `Gateway HTTP ${resp.status}: ${text}`, status_code: resp.status })
+            const resultEntry: NotificationResult = { subscription_id: subscription.id, success: false, error: `Gateway HTTP ${resp.status}: ${text}`, status_code: resp.status }
+            results.push(resultEntry)
+
+            // Se houver um device registration com device_token, enfileirar como fallback
+            if (deviceRegistration && deviceRegistration.device_token) {
+              try {
+                console.log(`[Edge Function] Enfileirando pending_notification para device_token ${deviceRegistration.device_token} devido ao erro do gateway`)
+                await supabase
+                  .from('pending_notifications')
+                  .insert({
+                    device_token: deviceRegistration.device_token,
+                    notification_data: notificationPayload,
+                    created_at: new Date().toISOString(),
+                    delivery_method: 'device_token',
+                    error_info: `gateway_error_${resp.status}`
+                  })
+                // marcar como 'queued' no resultEntry
+                resultEntry.queued_for_device_token = true
+              } catch (pnErr) {
+                console.error('[Edge Function] Erro ao enfileirar pending_notification após falha do gateway:', pnErr)
+              }
+            }
+
             continue
           }
-        } catch (sendErr) {
+          } catch (sendErr) {
           errorCount++
           console.error(`[Edge Function] ❌ Erro ao enviar para subscription ${subscription.id} via gateway:`, sendErr)
-          results.push({ subscription_id: subscription.id, success: false, error: String(sendErr) })
+          const resultEntry: NotificationResult = { subscription_id: subscription.id, success: false, error: String(sendErr) }
+          results.push(resultEntry)
+
+          // Em caso de erro de rede/exceção, tentar enfileirar para device_token se disponível
+          if (deviceRegistration && deviceRegistration.device_token) {
+            try {
+              console.log(`[Edge Function] Enfileirando pending_notification para device_token ${deviceRegistration.device_token} devido a exceção no envio`)
+              await supabase
+                .from('pending_notifications')
+                .insert({
+                  device_token: deviceRegistration.device_token,
+                  notification_data: notificationPayload,
+                  created_at: new Date().toISOString(),
+                  delivery_method: 'device_token',
+                  error_info: `exception_${String(sendErr)}`
+                })
+              resultEntry.queued_for_device_token = true
+            } catch (pnErr) {
+              console.error('[Edge Function] Erro ao enfileirar pending_notification após exceção no envio:', pnErr)
+            }
+          }
+
           continue
         }
 

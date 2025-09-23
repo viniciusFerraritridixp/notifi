@@ -9,43 +9,34 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
         console.log('SW registrado com sucesso:', registration);
-        // Após registrar o SW, tentar executar o teste híbrido automático se aplicável
+        // Após registrar o SW, inicializar o gerenciador híbrido para gerar/salvar device token
         (async () => {
           try {
+            // Inicializar sempre (garante que device token seja salvo automaticamente quando possível)
+            const { default: hybridNotificationManager } = await import('./utils/hybridNotificationManager.js')
+            const result = await hybridNotificationManager.initialize()
+
+            // Se tivermos um device token, opcionalmente enviar notificação de teste em mobile
             const isMobile = /Mobi|Android/i.test(navigator.userAgent)
-            const permission = Notification.permission
-            const autoTestKey = 'autoHybridTestDone_v1'
-
-            // Executar apenas em mobile, com permissão concedida e se ainda não executado
-            if (isMobile && permission === 'granted' && !localStorage.getItem(autoTestKey)) {
-              console.log('[AutoTest] Iniciando teste híbrido automático')
-              // Importar o gerenciador híbrido
-              const { default: hybridNotificationManager } = await import('./utils/hybridNotificationManager.js')
-              const result = await hybridNotificationManager.initialize()
-
-              // Se tivermos um device token, enviar notificação de teste via serviço
-              if (result && result.deviceToken) {
-                try {
-                  const { default: supabasePushService } = await import('./services/supabasePushService.js')
-                  const testNotification = {
-                    title: 'Teste automático de notificação',
-                    body: 'Verificação automática: notificação híbrida',
-                    icon: '/icon.svg',
-                    badge: '/pwa-64x64.png',
-                    timestamp: new Date().toISOString()
-                  }
-                  await supabasePushService.sendNotificationToDeviceTokens([result.deviceToken], testNotification)
-                  console.log('[AutoTest] Notificação de teste enviada')
-                } catch (err) {
-                  console.warn('[AutoTest] Erro ao enviar notificação de teste:', err)
+            if (isMobile && result && result.deviceToken) {
+              try {
+                const { default: supabasePushService } = await import('./services/supabasePushService.js')
+                const testNotification = {
+                  title: 'Configuração de Notificações',
+                  body: 'Seu dispositivo foi registrado para notificações',
+                  icon: '/icon.svg',
+                  badge: '/pwa-64x64.png',
+                  timestamp: new Date().toISOString()
                 }
+                await supabasePushService.sendNotificationToDeviceTokens([result.deviceToken], testNotification)
+                console.log('[AutoInit] Notificação de teste enviada')
+              } catch (err) {
+                console.warn('[AutoInit] Erro ao enviar notificação de teste:', err)
               }
-
-              // Marcar como executado para não repetir
-              localStorage.setItem(autoTestKey, '1')
             }
+
           } catch (err) {
-            console.warn('[AutoTest] Falha no teste híbrido automático:', err)
+            console.warn('[AutoInit] Falha ao inicializar hybridNotificationManager:', err)
           }
         })()
       })
