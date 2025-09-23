@@ -174,10 +174,21 @@ const SubscriptionDebugger = () => {
 
       // Test subscription creation
       addLog('🔄 Criando subscription...')
-      
+
+      // Converter a chave VAPID para Uint8Array se necessário
+      let applicationServerKey = publicKey
+      try {
+        if (typeof publicKey === 'string') {
+          applicationServerKey = notificationManager.urlBase64ToUint8Array(publicKey)
+          addLog('🔑 VAPID convertida para Uint8Array', 'info')
+        }
+      } catch (e) {
+        addLog('❌ Erro ao converter VAPID key: ' + e.message, 'error')
+      }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: publicKey
+        applicationServerKey
       })
 
       addLog('✅ Subscription criada com sucesso!', 'success')
@@ -204,7 +215,12 @@ const SubscriptionDebugger = () => {
 
       // Test using notification manager
       addLog('🔄 Testando com notificationManager...')
-      const managerSubscription = await notificationManager.getCurrentSubscription()
+      let managerSubscription = await notificationManager.getCurrentSubscription()
+
+      // Garantir que a subscription retornada pelo manager esteja normalizada
+      if (notificationManager.normalizeSubscription) {
+        managerSubscription = notificationManager.normalizeSubscription(managerSubscription)
+      }
       
       if (managerSubscription) {
         addLog('✅ NotificationManager retornou subscription', 'success')

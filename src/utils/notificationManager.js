@@ -273,10 +273,71 @@ export class NotificationManager {
 
     try {
       const registration = await navigator.serviceWorker.ready
-      return await registration.pushManager.getSubscription()
+      const subscription = await registration.pushManager.getSubscription()
+      return this.normalizeSubscription(subscription)
     } catch (error) {
       console.error('Erro ao obter subscription:', error)
       return null
+    }
+  }
+
+  // Converter ArrayBuffer/TypedArray para base64
+  arrayBufferToBase64(buffer) {
+    try {
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      return btoa(binary)
+    } catch (e) {
+      console.warn('[NotificationManager] Falha ao converter ArrayBuffer para base64', e)
+      return null
+    }
+  }
+
+  // Normalizar subscription: garantir .keys { p256dh, auth } quando possível
+  normalizeSubscription(subscription) {
+    if (!subscription) return subscription
+
+    try {
+      // Se já tiver keys, só retorna
+      if (subscription.keys && (subscription.keys.p256dh || subscription.keys.auth)) {
+        return subscription
+      }
+
+      // Tentar getKey() quando disponível
+      if (subscription.getKey && typeof subscription.getKey === 'function') {
+        try {
+          const pKey = subscription.getKey('p256dh')
+          const aKey = subscription.getKey('auth')
+
+          const p256dh = pKey ? this.arrayBufferToBase64(pKey) : null
+          const auth = aKey ? this.arrayBufferToBase64(aKey) : null
+
+          if (p256dh || auth) {
+            subscription.keys = subscription.keys || {}
+            if (p256dh) subscription.keys.p256dh = p256dh
+            if (auth) subscription.keys.auth = auth
+            return subscription
+          }
+        } catch (e) {
+          console.warn('[NotificationManager] Erro ao chamar getKey():', e)
+        }
+      }
+
+      // Alguns navegadores podem expor properties planas
+      if (subscription.p256dh || subscription.auth) {
+        subscription.keys = subscription.keys || {}
+        if (subscription.p256dh) subscription.keys.p256dh = subscription.p256dh
+        if (subscription.auth) subscription.keys.auth = subscription.auth
+        return subscription
+      }
+
+      return subscription
+    } catch (e) {
+      console.warn('[NotificationManager] Falha ao normalizar subscription:', e)
+      return subscription
     }
   }
 
