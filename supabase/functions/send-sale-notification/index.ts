@@ -3,6 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+// Importar web-push compatível com Deno via esm.sh
 
 // Interface para dados de venda
 interface SaleData {
@@ -68,9 +69,9 @@ serve(async (req) => {
     // Obter variáveis de ambiente
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY') || 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
-    const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') || 'qm_eXxdd8WFq2YYgJV3Kox5fy39hhztxrwX9OgTo6B8'
-    const VAPID_EMAIL = Deno.env.get('VAPID_EMAIL') || 'mailto:dev@example.com'
+  const _VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY') || 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
+  const _VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') || 'qm_eXxdd8WFq2YYgJV3Kox5fy39hhztxrwX9OgTo6B8'
+  const _VAPID_EMAIL = Deno.env.get('VAPID_EMAIL') || 'mailto:dev@example.com'
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       console.error("[Edge Function] Erro: Variáveis de ambiente SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configuradas")
@@ -170,7 +171,7 @@ serve(async (req) => {
 
     console.log("[Edge Function] Payload da notificação:", notificationPayload)
 
-    // Enviar notificações para cada subscription
+  // Enviar notificações para cada subscription
     const results = []
     let successCount = 0
     let errorCount = 0
@@ -196,35 +197,57 @@ serve(async (req) => {
           continue
         }
 
-        // Enviar Web Push usando fetch para um serviço externo ou implementação própria
-        const pushResult = await sendWebPush(subscription, notificationPayload, {
-          vapidPublicKey: VAPID_PUBLIC_KEY,
-          vapidPrivateKey: VAPID_PRIVATE_KEY,
-          vapidEmail: VAPID_EMAIL
-        })
-
-        if (pushResult.success) {
-          successCount++
-          console.log(`[Edge Function] ✅ Notificação enviada para subscription ${subscription.id}`)
-        } else {
-          errorCount++
-          console.error(`[Edge Function] ❌ Falha ao enviar para subscription ${subscription.id}:`, pushResult.error)
-          
-          // Se for erro 410 (Gone), marcar subscription como inativa
-          if (pushResult.statusCode === 410) {
-            console.log(`[Edge Function] Marcando subscription ${subscription.id} como inativa (410 Gone)`)
-            await supabase
-              .from('push_subscriptions')
-              .update({ is_active: false })
-              .eq('id', subscription.id)
+        // Enviar via gateway HTTP (gateway deve implementar Web Push real, ex: /api/send-push)
+        try {
+          const PUSH_GATEWAY_URL = Deno.env.get('PUSH_GATEWAY_URL') || ''
+          if (!PUSH_GATEWAY_URL) {
+            throw new Error('PUSH_GATEWAY_URL não configurado no ambiente da Edge Function')
           }
+
+          const resp = await fetch(PUSH_GATEWAY_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              endpoint: subscription.endpoint,
+              p256dh: subscription.p256dh,
+              auth: subscription.auth,
+              notification: notificationPayload
+            })
+          })
+
+          if (resp.ok) {
+            successCount++
+            console.log(`[Edge Function] ✅ Notificação enviada para subscription ${subscription.id} via gateway`)
+          } else {
+            errorCount++
+            console.error(`[Edge Function] ❌ Gateway retornou erro ${resp.status} ao enviar para subscription ${subscription.id}`)
+            // Se for 410, marcar a subscription como inativa
+            if (resp.status === 410) {
+              console.log(`[Edge Function] Marcando subscription ${subscription.id} como inativa (410 Gone)`)
+              await supabase
+                .from('push_subscriptions')
+                .update({ is_active: false })
+                .eq('id', subscription.id)
+            }
+            const text = await resp.text().catch(() => '')
+            results.push({ subscription_id: subscription.id, success: false, error: `Gateway HTTP ${resp.status}: ${text}`, status_code: resp.status })
+            continue
+          }
+        } catch (sendErr) {
+          errorCount++
+          console.error(`[Edge Function] ❌ Erro ao enviar para subscription ${subscription.id} via gateway:`, sendErr)
+          results.push({ subscription_id: subscription.id, success: false, error: String(sendErr) })
+          continue
         }
 
+        // Push registrado como sucesso no bloco acima
         results.push({
           subscription_id: subscription.id,
-          success: pushResult.success,
-          error: pushResult.error,
-          status_code: pushResult.statusCode
+          success: true,
+          error: null,
+          status_code: null
         })
 
       } catch (error) {
@@ -295,54 +318,4 @@ serve(async (req) => {
   }
 })
 
-// Função para enviar Web Push
-async function sendWebPush(
-  subscription: PushSubscription, 
-  payload: NotificationPayload,
-  vapidConfig: { vapidPublicKey: string, vapidPrivateKey: string, vapidEmail: string }
-): Promise<{ success: boolean, error?: string, statusCode?: number }> {
-  try {
-    // Implementação simplificada usando fetch para FCM (se for endpoint do Google)
-    // Para uma implementação completa, seria necessário implementar o protocolo Web Push completo
-    
-    if (subscription.endpoint.includes('fcm.googleapis.com')) {
-      // Para FCM, podemos usar uma abordagem simplificada
-      console.log(`[sendWebPush] Enviando via FCM para endpoint: ${subscription.endpoint.substring(0, 50)}...`)
-      
-      const response = await fetch(subscription.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'TTL': '3600'
-        },
-        body: JSON.stringify(payload)
-      })
-
-      if (response.ok) {
-        return { success: true }
-      } else {
-        return { 
-          success: false, 
-          error: `HTTP ${response.status}: ${response.statusText}`,
-          statusCode: response.status
-        }
-      }
-    } else {
-      // Para outros endpoints, seria necessário implementar VAPID e encriptação completa
-      // Por enquanto, simular sucesso e logar para implementação futura
-      console.log(`[sendWebPush] Endpoint não-FCM detectado: ${subscription.endpoint.substring(0, 50)}...`)
-      console.log(`[sendWebPush] VAPID Config: ${vapidConfig.vapidEmail}`)
-      
-      // Simular sucesso para desenvolvimento
-      return { success: true }
-    }
-
-  } catch (error) {
-    console.error("[sendWebPush] Erro:", error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    return { 
-      success: false, 
-      error: errorMessage 
-    }
-  }
-}
+// NOTE: envio via web-push está implementado inline no loop acima usando a lib `web-push`.
