@@ -8,6 +8,8 @@ export class NotificationManager {
     this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
     this.permission = this.isSupported ? Notification.permission : 'denied'
     this.isIOS = this.detectIOS()
+    // Configurar listener para requisições vindas do Service Worker
+    this.setupServiceWorkerMessageListener()
   }
 
   // Detectar se está no iOS
@@ -221,6 +223,58 @@ export class NotificationManager {
     // Listener para blur/focus da janela
     window.addEventListener('blur', () => this.handleIOSBackground())
     window.addEventListener('focus', () => this.handleIOSForeground())
+  }
+
+  // Listener para comandos vindos do Service Worker (ex: REQUEST_RESUBSCRIBE)
+  setupServiceWorkerMessageListener() {
+    try {
+      if (!('serviceWorker' in navigator)) return
+
+      navigator.serviceWorker.addEventListener('message', async (event) => {
+        try {
+          const data = event.data
+          if (!data || !data.type) return
+
+          if (data.type === 'REQUEST_RESUBSCRIBE') {
+            console.log('[NotificationManager] SW solicitou re-subscribe')
+
+            try {
+              const registration = await navigator.serviceWorker.ready
+
+              // Tentar re-subscrever usando VAPID da env (fallback hardcoded)
+              const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BHfaFZwuUosXHjQHZSc2A8n3io5Phumr9JQo5e7JFlskp0XhA2pT1_HDE5FdP4KQULwWwIph8Yr8zSYPD9f5E2o'
+              const applicationServerKey = this.urlBase64ToUint8Array(vapidPublicKey)
+
+              const newSubscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey
+              })
+
+              const normalized = this.normalizeSubscription(newSubscription)
+
+              // Registrar no backend
+              try {
+                await supabasePushService.registerSubscription(normalized)
+                console.log('[NotificationManager] Re-subscribe registrado com sucesso no backend')
+              } catch (regErr) {
+                console.warn('[NotificationManager] Falha ao registrar re-subscribe:', regErr)
+              }
+
+              // Enviar confirmação de volta ao SW
+              if (navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ type: 'RESUBSCRIBE_COMPLETE' })
+              }
+            } catch (err) {
+              console.error('[NotificationManager] Erro na re-subscribe automática:', err)
+            }
+          }
+        } catch (innerErr) {
+          console.error('[NotificationManager] Erro ao processar mensagem do SW:', innerErr)
+        }
+      })
+    } catch (err) {
+      console.warn('[NotificationManager] Não foi possível configurar listener do Service Worker:', err)
+    }
   }
 
   handleIOSBackground() {

@@ -2,6 +2,7 @@ import webpush from 'web-push'
 import fs from 'fs'
 import path from 'path'
 
+// Carregar VAPID keys do arquivo público ou variáveis de ambiente
 const vapidPath = path.resolve(process.cwd(), 'public', 'vapid-keys.json')
 let vapid = null
 if (fs.existsSync(vapidPath)) {
@@ -14,14 +15,20 @@ if (fs.existsSync(vapidPath)) {
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || vapid?.publicKey
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || vapid?.privateKey
+const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:dev@example.com'
 
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails('mailto:dev@example.com', VAPID_PUBLIC, VAPID_PRIVATE)
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE)
 } else {
   console.warn('[send-push] VAPID keys not found. Push will likely fail.')
 }
 
-export async function post(req, res) {
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+
   try {
     const body = req.body || (await new Promise((r) => {
       let data = ''
@@ -29,7 +36,7 @@ export async function post(req, res) {
       req.on('end', () => r(JSON.parse(data)))
     }))
 
-  const { endpoint, p256dh, auth, notification, ttl } = body
+    const { endpoint, p256dh, auth, notification, ttl } = body
 
     if (!endpoint || !p256dh || !auth) {
       return res.status(400).json({ error: 'Missing subscription fields' })
@@ -51,29 +58,18 @@ export async function post(req, res) {
 
       const pushResult = await webpush.sendNotification(subscription, payload, options)
 
-      // web-push normalmente resolve sem retorno detalhado; considerar sucesso
       return res.status(200).json({ success: true, result: pushResult || null })
     } catch (sendErr) {
       console.error('[send-push] sendNotification error:', sendErr)
-
-      // Se o erro indicar que a subscription foi removida (410), retornar 410 para que o chamador marque inativo
       const statusCode = sendErr && sendErr.statusCode ? sendErr.statusCode : null
       if (statusCode === 410 || (String(sendErr).match(/410|gone/i))) {
         return res.status(410).json({ success: false, error: 'Subscription gone', details: String(sendErr) })
       }
-
       return res.status(500).json({ success: false, error: String(sendErr) })
     }
+
   } catch (err) {
     console.error('[send-push] error', err)
     return res.status(500).json({ success: false, error: String(err) })
   }
 }
-
-export async function handler(req, res) {
-  // For environments that call default export
-  if (req.method === 'POST') return post(req, res)
-  return res.status(405).json({ error: 'Method not allowed' })
-}
-
-export default handler
