@@ -7,7 +7,6 @@ import Settings from './components/Settings'
 import InstallPrompt from './components/InstallPrompt'
 import ConfigurationCheck from './components/ConfigurationCheck'
 import AutoRegisterDevice from './components/AutoRegisterDevice'
-import ShowFcmToken from './components/ShowFcmToken'
 import supabasePushService from './services/supabasePushService'
 import './App.css'
 
@@ -75,7 +74,6 @@ function App() {
                     onAddNotification={addNotification}
                   />
                   <AutoRegisterDevice />
-                  <ShowFcmToken />
                 </>
               } 
             />
