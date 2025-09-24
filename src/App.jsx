@@ -6,6 +6,7 @@ import NotificationCenter from './components/NotificationCenter'
 import Settings from './components/Settings'
 import InstallPrompt from './components/InstallPrompt'
 import ConfigurationCheck from './components/ConfigurationCheck'
+import AutoRegisterDevice from './components/AutoRegisterDevice'
 import supabasePushService from './services/supabasePushService'
 import './App.css'
 
@@ -64,13 +65,16 @@ function App() {
             <Route 
               path="/" 
               element={
-                <Dashboard 
-                  notifications={notifications}
-                  isSupported={isSupported}
-                  permission={permission}
-                  onPermissionChange={setPermission}
-                  onAddNotification={addNotification}
-                />
+                <>
+                  <Dashboard 
+                    notifications={notifications}
+                    isSupported={isSupported}
+                    permission={permission}
+                    onPermissionChange={setPermission}
+                    onAddNotification={addNotification}
+                  />
+                  <AutoRegisterDevice />
+                </>
               } 
             />
             <Route 

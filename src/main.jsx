@@ -5,20 +5,52 @@ import './index.css'
 
 // Registrar Service Worker para PWA
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('SW registrado com sucesso:', registration);
-        // Após registrar o SW, inicializar o gerenciador híbrido para gerar/salvar device token
-        (async () => {
-          try {
-            // Inicializar sempre (garante que device token seja salvo automaticamente quando possível)
-            const { default: hybridNotificationManager } = await import('./utils/hybridNotificationManager.js')
-            const result = await hybridNotificationManager.initialize()
+  const initHybrid = async () => {
+    try {
+      console.log('[AutoInit] Iniciando registro automático do dispositivo...')
+      
+      // 1. Inicializar hybridNotificationManager (gera device_token)
+      const { default: hybridNotificationManager } = await import('./utils/hybridNotificationManager.js')
+      const result = await hybridNotificationManager.initialize()
 
-            // Se tivermos um device token, opcionalmente enviar notificação de teste em mobile
+      // 2. Obter FCM token automaticamente
+      let fcmToken = null
+      try {
+        const { default: FirebaseNotificationService } = await import('./lib/firebase.js')
+        fcmToken = await FirebaseNotificationService.requestPermissionAndGetToken()
+        console.log('[AutoInit] FCM token obtido:', fcmToken ? '✅' : '❌')
+      } catch (fcmErr) {
+        console.warn('[AutoInit] Erro ao obter FCM token:', fcmErr)
+      }
+
+      // 3. Registrar dispositivo com token FCM (se disponível)
+      if (result && result.deviceToken) {
+        try {
+          const deviceData = {
+            device_token: result.deviceToken,
+            fcm_token: fcmToken,
+            user_agent: navigator.userAgent,
+            platform: navigator.platform,
+            is_ios: /iPad|iPhone|iPod/.test(navigator.userAgent),
+            is_mobile: /Mobi|Android/i.test(navigator.userAgent),
+            language: navigator.language,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            screen_resolution: `${screen.width}x${screen.height}`,
+            url: window.location.href
+          }
+
+          const response = await fetch('/api/register-device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(deviceData)
+          })
+
+          if (response.ok) {
+            console.log('[AutoInit] ✅ Dispositivo registrado automaticamente com FCM token')
+            
+            // Opcional: enviar notificação de teste em mobile
             const isMobile = /Mobi|Android/i.test(navigator.userAgent)
-            if (isMobile && result && result.deviceToken) {
+            if (isMobile && fcmToken) {
               try {
                 const { default: supabasePushService } = await import('./services/supabasePushService.js')
                 const testNotification = {
@@ -34,16 +66,29 @@ if ('serviceWorker' in navigator) {
                 console.warn('[AutoInit] Erro ao enviar notificação de teste:', err)
               }
             }
-
-          } catch (err) {
-            console.warn('[AutoInit] Falha ao inicializar hybridNotificationManager:', err)
+          } else {
+            console.warn('[AutoInit] Erro ao registrar dispositivo:', response.status)
           }
-        })()
-      })
-      .catch((registrationError) => {
-        console.log('SW falhou ao registrar:', registrationError);
-      });
-  });
+        } catch (registerErr) {
+          console.warn('[AutoInit] Erro ao registrar dispositivo:', registerErr)
+        }
+      }
+    } catch (err) {
+      console.warn('[AutoInit] Falha no registro automático:', err)
+    }
+  }
+
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      console.log('SW registrado com sucesso:', registration);
+    } catch (registrationError) {
+      console.log('SW falhou ao registrar:', registrationError);
+    } finally {
+      // Inicializar independentemente do resultado do registro do SW
+      initHybrid()
+    }
+  })
 }
 
 // Ouvir mensagens do Service Worker para tocar som personalizado

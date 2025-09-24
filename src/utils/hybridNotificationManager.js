@@ -318,6 +318,38 @@ class HybridNotificationManager {
         url: window.location.href
       }
 
+      // Tentar obter token FCM automaticamente (se suportado pelo ambiente)
+      try {
+        if (typeof Notification !== 'undefined' && Notification.permission !== 'denied') {
+          const { FirebaseNotificationService } = await import('../lib/firebase.js');
+          if (FirebaseNotificationService && typeof FirebaseNotificationService.requestPermissionAndGetToken === 'function') {
+            const fcm = await FirebaseNotificationService.requestPermissionAndGetToken();
+            if (fcm) {
+              // Enviar de forma segura ao backend para gravar com service_role
+              try {
+                const resp = await fetch('/api/register-device', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ...deviceInfo, device_token: this.deviceToken, fcm_token: fcm })
+                });
+
+                if (resp.ok) {
+                  console.log('[HybridNotification] FCM token enviado ao backend com sucesso');
+                } else {
+                  console.warn('[HybridNotification] Backend retornou erro ao gravar fcm_token:', resp.status);
+                }
+              } catch (netErr) {
+                console.warn('[HybridNotification] Falha ao enviar fcm_token ao backend:', netErr);
+              }
+            } else {
+              console.log('[HybridNotification] FCM token não disponível/negado no momento');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[HybridNotification] Falha ao tentar obter FCM token automaticamente:', e);
+      }
+
       console.log('📡 [HybridNotification] Registrando no servidor:', deviceInfo)
 
       // Importar serviço do Supabase
